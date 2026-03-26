@@ -1,5 +1,7 @@
 # EC2 Capacity Block Search
 
+[English](README.en.md) | 中文
+
 基于任务队列的异步 EC2 容量块查询系统
 
 ## 🎯 项目特点
