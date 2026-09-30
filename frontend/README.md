@@ -56,6 +56,12 @@ npm run build
 3. 压缩为 zip 文件
 4. 在 Amplify Console 上传 zip
 
+> 🔒 **安全建议（重要）**：前端产物中内嵌了 API Key（公开可见，非身份认证）。通过 Amplify 部署对外访问时，强烈建议：
+> - 开启 Amplify **访问控制（Access control）→ 用户名 / 密码登录（Basic Auth）**，防止页面被任何人公开访问；
+> - 为 Amplify 应用 / API Gateway 接入 **AWS WAF**，限制来源与速率、拦截恶意流量。
+>
+> 详见根目录 [README](../README.md) 的「安全建议」与「免责声明」。
+
 ## 使用说明
 
 ### 提交任务

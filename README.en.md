@@ -142,6 +142,20 @@ aws sns subscribe \
 
 See [README.md](/frontend/README.md)
 
+## 🔒 Security Recommendations
+
+This sample protects its API with an **API Key only**, and that key is bundled into the frontend build (it is public information, **not an authentication mechanism**). Before using it in production or exposing it publicly, we strongly recommend:
+
+- **Enable AWS WAF** on API Gateway and/or the Amplify app to restrict origins, rate-limit, and block malicious traffic.
+- **Require login for the frontend**: if you deploy the frontend via **AWS Amplify Hosting**, enable Amplify **Access control (username/password Basic Auth)** so the page — and the API key embedded in it — is not publicly accessible.
+- **Add real API authentication** such as Amazon Cognito, IAM, or a Lambda Authorizer, to replace/augment the API Key.
+- **Tighten CORS** to your frontend domain instead of `*`.
+- **Harden the S3 results bucket**: explicitly enable Block Public Access, default encryption, and enforce SSL.
+
+## ⚠️ Disclaimer
+
+This project is **sample/demo code** intended for demonstration and learning purposes only. It is provided **"AS IS"** without warranties of any kind, express or implied. Do not use it in production without a thorough security review and hardening. You assume all risks and costs arising from its use (including but not limited to AWS resource charges, data security, and compliance). This project does not represent an official AWS position.
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.

@@ -142,6 +142,20 @@ aws sns subscribe \
 
 请参考 [README.md](/frontend/README.md)
 
+## 🔒 安全建议
+
+本示例的 API 仅使用 **API Key** 保护，而 API Key 会被打包进前端产物中（属公开信息，**不是身份认证手段**）。用于生产或对外访问前，强烈建议：
+
+- **启用 AWS WAF**：为 API Gateway 和 / 或 Amplify 应用接入 WAF，限制来源、速率并拦截恶意流量。
+- **前端启用登录（账号密码）**：若通过 **AWS Amplify Hosting** 部署前端，请开启 Amplify 的**访问控制（Access control，即用户名 / 密码 Basic Auth）**，避免页面及其内嵌的 API Key 被任何人公开访问。
+- **为 API 增加真实鉴权**：如 Amazon Cognito、IAM 或 Lambda Authorizer，替代 / 补充 API Key。
+- **收紧 CORS**：将 `allow_origins` 限制为你的前端域名，而非 `*`。
+- **加固 S3 结果桶**：显式启用 Block Public Access、默认加密与 enforce SSL。
+
+## ⚠️ 免责声明
+
+本项目为**示例代码（Sample / Demo）**，仅用于演示与学习目的，按「**现状（AS IS）**」提供，不含任何明示或默示的担保。请勿在未经充分安全评估与加固的情况下直接用于生产环境。使用者须自行承担因使用本代码而产生的一切风险与费用（包括但不限于 AWS 资源费用、数据安全与合规责任）。本项目不代表 AWS 官方立场。
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
