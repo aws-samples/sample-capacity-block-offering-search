@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider, FormHelperText, Alert } from '@mui/material';
+import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider, FormHelperText, Alert, CircularProgress } from '@mui/material';
+import { Send } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 
@@ -14,6 +15,8 @@ function SearchForm({ onSubmit, instanceTypesData }) {
   const [INSTANCE_TYPES, setInstanceTypesList] = useState([]);
   const [ALL_REGIONS, setAllRegions] = useState([]);
   const [REGION_GROUPS, setRegionGroups] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
   useEffect(() => {
     if (!instanceTypesData) return;
@@ -40,10 +43,21 @@ function SearchForm({ onSubmit, instanceTypesData }) {
     setRegions(sortedRegions);
   }, [instanceTypesData]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit({ instanceTypes, duration, startDate, forecastDays, regions });
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit({ instanceTypes, duration, startDate, forecastDays, regions });
+    } catch (err) {
+      setSubmitError(err.response?.data?.error || err.message || '提交任务失败');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const selectedRegionCount = regions.length;
+  const estimatedSubtasks = instanceTypes.length * selectedRegionCount * (forecastDays + 1);
 
   const handleSelectAll = () => setRegions(ALL_REGIONS);
   const handleDeselectAll = () => setRegions([]);
@@ -171,9 +185,21 @@ function SearchForm({ onSubmit, instanceTypesData }) {
         </Grid>
 
         <Grid item xs={12}>
-          <Button type="submit" variant="contained" size="large" disabled={regions.length === 0 || instanceTypes.length === 0} fullWidth>
-            提交任务
+          {submitError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSubmitError(null)}>{submitError}</Alert>}
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            disabled={regions.length === 0 || instanceTypes.length === 0 || submitting}
+            fullWidth
+            startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <Send />}
+          >
+            {submitting ? '提交中…' : '提交任务'}
           </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+            已选 {instanceTypes.length} 种机型 × {selectedRegionCount} 个区域 × {forecastDays + 1} 个起始日
+            ≈ <strong>{estimatedSubtasks}</strong> 个查询子任务
+          </Typography>
         </Grid>
       </Grid>
     </form>
