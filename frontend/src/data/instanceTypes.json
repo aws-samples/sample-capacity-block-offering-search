@@ -4,7 +4,7 @@
     "acceleratorType": "B300",
     "acceleratorCount": 8,
     "regions": {
-      "us-west-2": { "ratePerAccelerator": 11.70 }
+      "us-west-2": {}
     }
   },
   "p6-b200.48xlarge": {
@@ -12,9 +12,9 @@
     "acceleratorType": "B200",
     "acceleratorCount": 8,
     "regions": {
-      "us-east-1": { "ratePerAccelerator": 9.36 },
-      "us-east-2": { "ratePerAccelerator": 9.36 },
-      "us-west-2": { "ratePerAccelerator": 9.36 }
+      "us-east-1": {},
+      "us-east-2": {},
+      "us-west-2": {}
     }
   },
   "p5en.48xlarge": {
@@ -22,17 +22,17 @@
     "acceleratorType": "H200",
     "acceleratorCount": 8,
     "regions": {
-      "us-east-2": { "ratePerAccelerator": 5.201 },
-      "us-east-1": { "ratePerAccelerator": 5.201 },
-      "us-west-1": { "ratePerAccelerator": 6.502 },
-      "us-west-2": { "ratePerAccelerator": 5.201 },
-      "eu-north-1": { "ratePerAccelerator": 5.201 },
-      "eu-west-2": { "ratePerAccelerator": 5.201 },
-      "eu-south-2": { "ratePerAccelerator": 5.201 },
-      "ap-southeast-3": { "ratePerAccelerator": 5.201 },
-      "ap-south-1": { "ratePerAccelerator": 5.201 },
-      "ap-northeast-1": { "ratePerAccelerator": 5.201 },
-      "ap-northeast-2": { "ratePerAccelerator": 5.201 }
+      "us-east-2": {},
+      "us-east-1": {},
+      "us-west-1": {},
+      "us-west-2": {},
+      "eu-north-1": {},
+      "eu-west-2": {},
+      "eu-south-2": {},
+      "ap-southeast-3": {},
+      "ap-south-1": {},
+      "ap-northeast-1": {},
+      "ap-northeast-2": {}
     }
   },
   "p5e.48xlarge": {
@@ -40,16 +40,16 @@
     "acceleratorType": "H200",
     "acceleratorCount": 8,
     "regions": {
-      "us-east-2": { "ratePerAccelerator": 4.975 },
-      "us-west-1": { "ratePerAccelerator": 6.219 },
-      "us-west-2": { "ratePerAccelerator": 4.975 },
-      "eu-north-1": { "ratePerAccelerator": 4.975 },
-      "eu-west-2": { "ratePerAccelerator": 4.975 },
-      "ap-southeast-2": { "ratePerAccelerator": 4.975 },
-      "ap-southeast-3": { "ratePerAccelerator": 4.975 },
-      "ap-south-1": { "ratePerAccelerator": 4.975 },
-      "ap-northeast-1": { "ratePerAccelerator": 4.975 },
-      "sa-east-1": { "ratePerAccelerator": 4.975 }
+      "us-east-2": {},
+      "us-west-1": {},
+      "us-west-2": {},
+      "eu-north-1": {},
+      "eu-west-2": {},
+      "ap-southeast-2": {},
+      "ap-southeast-3": {},
+      "ap-south-1": {},
+      "ap-northeast-1": {},
+      "sa-east-1": {}
     }
   },
   "p5.48xlarge": {
@@ -57,17 +57,17 @@
     "acceleratorType": "H100",
     "acceleratorCount": 8,
     "regions": {
-      "us-east-1": { "ratePerAccelerator": 3.933 },
-      "us-east-2": { "ratePerAccelerator": 3.933 },
-      "us-west-2": { "ratePerAccelerator": 3.933 },
-      "us-west-1": { "ratePerAccelerator": 4.916 },
-      "ap-northeast-1": { "ratePerAccelerator": 3.933 },
-      "ap-southeast-3": { "ratePerAccelerator": 3.933 },
-      "ap-south-1": { "ratePerAccelerator": 3.933 },
-      "ap-southeast-2": { "ratePerAccelerator": 3.933 },
-      "eu-west-2": { "ratePerAccelerator": 3.933 },
-      "eu-north-1": { "ratePerAccelerator": 3.933 },
-      "sa-east-1": { "ratePerAccelerator": 3.933 }
+      "us-east-1": {},
+      "us-east-2": {},
+      "us-west-2": {},
+      "us-west-1": {},
+      "ap-northeast-1": {},
+      "ap-southeast-3": {},
+      "ap-south-1": {},
+      "ap-southeast-2": {},
+      "eu-west-2": {},
+      "eu-north-1": {},
+      "sa-east-1": {}
     }
   },
   "p4de.24xlarge": {
@@ -75,8 +75,8 @@
     "acceleratorType": "A100",
     "acceleratorCount": 8,
     "regions": {
-      "us-east-1": { "ratePerAccelerator": 1.845 },
-      "us-west-2": { "ratePerAccelerator": 1.845 }
+      "us-east-1": {},
+      "us-west-2": {}
     }
   },
   "p4d.24xlarge": {
@@ -84,9 +84,9 @@
     "acceleratorType": "A100",
     "acceleratorCount": 8,
     "regions": {
-      "us-east-1": { "ratePerAccelerator": 1.475 },
-      "us-east-2": { "ratePerAccelerator": 1.475 },
-      "us-west-2": { "ratePerAccelerator": 1.475 }
+      "us-east-1": {},
+      "us-east-2": {},
+      "us-west-2": {}
     }
   },
   "trn2.48xlarge": {
@@ -94,7 +94,7 @@
     "acceleratorType": "Trainium2",
     "acceleratorCount": 16,
     "regions": {
-      "us-east-2": { "ratePerAccelerator": 2.235 }
+      "us-east-2": {}
     }
   },
   "p5.4xlarge": {
@@ -102,14 +102,14 @@
     "acceleratorType": "H100",
     "acceleratorCount": 1,
     "regions": {
-      "us-east-1": { "ratePerAccelerator": 3.933 },
-      "us-west-2": { "ratePerAccelerator": 3.933 },
-      "us-east-2": { "ratePerAccelerator": 3.933 },
-      "ap-northeast-1": { "ratePerAccelerator": 3.933 },
-      "ap-south-1": { "ratePerAccelerator": 3.933 },
-      "ap-southeast-2": { "ratePerAccelerator": 3.933 },
-      "eu-west-2": { "ratePerAccelerator": 3.933 },
-      "sa-east-1": { "ratePerAccelerator": 3.933 }
+      "us-east-1": {},
+      "us-west-2": {},
+      "us-east-2": {},
+      "ap-northeast-1": {},
+      "ap-south-1": {},
+      "ap-southeast-2": {},
+      "eu-west-2": {},
+      "sa-east-1": {}
     }
   }
 }

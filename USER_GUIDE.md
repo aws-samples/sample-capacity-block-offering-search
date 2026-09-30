@@ -53,6 +53,8 @@
 
 **提示**: 可以添加多个实例类型进行批量查询
 
+> ℹ️ 下拉框中的机型列表由系统通过 EC2 API 自动发现（每日刷新），涵盖当前所有支持 Capacity Block 的 P/Trn 加速机型及其可用区域。有新机型上线时会自动出现，无需人工维护。
+
 ![选择机型](./images/2.png)
 
 #### 1.2 选择区域
@@ -74,7 +76,8 @@
 #### 1.3 设置查询参数
 
 **持续时间 (Duration)**
-- 容量块的使用时长（天）
+- 容量块的**预留时长（租期）**——你要占用这批加速卡多少天
+- 决定结束日期：结束日期 = 开始日期 + 持续时间
 - 可选值: 1, 2, 3 ... 14, 21, 28 ...
 - 默认: 21 天
 
@@ -88,11 +91,14 @@
 ![选择查询时间](./images/5.png)
 
 **预测天数 (Forecast Days)**
-- 从开始日期起，查询未来几天的容量
+- 从开始日期起**逐天顺延、分别查询**的天数——用来看哪几天有容量，**不影响租期**
 - 范围: 0-14 天
-- 默认: 0 天 （仅查询开始日期当天）
+- 默认: 0 天 （仅查询开始日期当天）；选 N 则查开始日期起连续 N+1 个起始日
 
 ![选择查询未来天数](./images/6.png)
+
+> ℹ️ **持续时间 vs 预测天数**：前者是「用多久」（租期长度），后者是「从哪天起找货」（查询的起始日个数），两者相互独立。
+> 例：开始日期 10/01、持续时间 7 天、预测天数 3 天 → 会分别查询 10/01、10/02、10/03、10/04 共 4 个起始日，每个都寻找一个 **7 天**的容量块。
 
 #### 1.4 提交查询
 
@@ -135,17 +141,29 @@
 
 #### 3.1 下载 CSV 文件
 
-点击"下载 CSV 结果"按钮，下载包含以下列的 CSV 文件：
+点击"下载 CSV 结果"按钮，下载的 CSV 文件包含以下列（每个可用的 offering 一行）：
 
 | 列名 | 说明 | 示例 |
 |------|------|------|
-| instance_type | 实例类型 | p5.48xlarge |
-| region | AWS 区域 | us-east-1 |
-| start_date | 开始日期 | 2024-01-15T00:00:00Z |
-| duration_hours | 持续时间 | 21 |
-| max_capacity | 最大可用容量 | 32 |
-| query_time | 查询时间 | 2024-01-01T10:01:00Z |
-| status | 查询状态 | success |
+| Region | AWS 区域 | us-east-1 |
+| Searched Instance Type | 查询的实例类型 | p5.48xlarge |
+| Search Date | 查询的起始日期 | 2026-10-01 |
+| Instance Count | 该起始日找到的最大可用实例数 | 8 |
+| Rate per Accelerator (USD) | 每加速卡时价（由 Upfront Fee 反算，实时） | 3.933 |
+| Accelerator Type | 加速卡型号 | H100 |
+| Accelerator Count | 每实例加速卡数 | 8 |
+| Total Accelerator Count | 加速卡总数 (Instance Count × Accelerator Count) | 64 |
+| Capacity Block ID | 容量块 offering ID | cbr-0abc123... |
+| Actual Instance Type | offering 实际实例类型 | p5.48xlarge |
+| Start Date (Beijing Time) | 容量块开始时间（北京时间 UTC+8） | 2026-10-02 08:00:00 |
+| End Date (Beijing Time) | 容量块结束时间（北京时间 UTC+8） | 2026-10-09 08:00:00 |
+| Duration (hours) | 容量块时长（小时） | 168 |
+| Availability Zone | 可用区 | use1-az4 |
+| Upfront Fee | 一次性预付总费用（真实 API 返回） | 4762.94 |
+| Currency Code | 货币 | USD |
+| Status | 状态 | Available |
+
+> ℹ️ 「Rate per Accelerator (USD)」（每加速卡时价）由该 offering 的真实 `Upfront Fee` 反算得出（`Upfront Fee / (Instance Count × Accelerator Count × Duration Hours)`），为实时价格、非写死值；仅在该时段有可用容量（有 offering）时才有数值。
 
 ---
 

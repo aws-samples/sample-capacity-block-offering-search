@@ -12,6 +12,9 @@ from aws_cdk import (
     aws_stepfunctions_tasks as tasks,
     aws_iam as iam,
     aws_ssm as ssm,
+    aws_events as events,
+    aws_events_targets as events_targets,
+    triggers,
 )
 from constructs import Construct
 import json
@@ -20,17 +23,66 @@ class CapacityBlockAsyncStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Load instance types configuration
+        # Load instance types configuration (deploy-time seed / fallback only).
+        # The RefreshInstanceTypes Lambda overwrites this with live EC2 data on
+        # every deploy (via a Trigger) and daily (via EventBridge).
         with open('../frontend/src/data/instanceTypes.json', 'r') as f:
             instance_types_config = json.load(f)
-        
-        # SSM Parameter for instance types configuration
+
+        # SSM Parameter for instance types configuration.
+        # Intelligent-Tiering auto-upgrades to Advanced if the JSON exceeds the
+        # 4KB Standard limit as more instance types/regions are discovered.
         instance_types_parameter = ssm.StringParameter(
             self, "InstanceTypesConfig",
             parameter_name="/capacity-block-search/instance-types",
             string_value=json.dumps(instance_types_config),
-            description="Instance types configuration with pricing and regions",
-            tier=ssm.ParameterTier.STANDARD
+            description="Instance types configuration (accelerator specs and regions); auto-refreshed from EC2 API",
+            tier=ssm.ParameterTier.INTELLIGENT_TIERING
+        )
+
+        # Lambda: Refresh Instance Types (dynamic discovery via EC2 API)
+        refresh_instance_types_lambda = lambda_.Function(
+            self, "RefreshInstanceTypesLambda",
+            runtime=lambda_.Runtime.PYTHON_3_14,
+            handler="refresh_instance_types.lambda_handler",
+            code=lambda_.Code.from_asset("../backend"),
+            # Probes describe_capacity_block_offerings per (type, region) across
+            # all enabled regions, so allow generous headroom for CB API throttling
+            timeout=Duration.minutes(10),
+            memory_size=512,
+            environment={
+                "INSTANCE_TYPES_PARAMETER": instance_types_parameter.parameter_name,
+            }
+        )
+
+        instance_types_parameter.grant_write(refresh_instance_types_lambda)
+        refresh_instance_types_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ec2:DescribeRegions",
+                    "ec2:DescribeInstanceTypes",
+                    "ec2:DescribeInstanceTypeOfferings",
+                    "ec2:DescribeCapacityBlockOfferings",
+                ],
+                resources=["*"]
+            )
+        )
+
+        # Refresh daily so newly launched instance types / regions appear automatically
+        events.Rule(
+            self, "RefreshInstanceTypesSchedule",
+            schedule=events.Schedule.rate(Duration.days(1)),
+            targets=[events_targets.LambdaFunction(refresh_instance_types_lambda)]
+        )
+
+        # Refresh once at deploy time so the very first deploy uses live data
+        # (not the possibly-stale JSON seed). Runs after the parameter exists.
+        triggers.Trigger(
+            self, "RefreshInstanceTypesOnDeploy",
+            handler=refresh_instance_types_lambda,
+            execute_after=[instance_types_parameter],
+            execute_on_handler_change=True,
+            timeout=Duration.minutes(10)
         )
 
         # DynamoDB Table 1: Tasks Metadata

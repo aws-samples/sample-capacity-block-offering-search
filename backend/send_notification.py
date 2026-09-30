@@ -1,7 +1,7 @@
 import json
 import boto3
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 logger = logging.getLogger()
@@ -32,7 +32,7 @@ def lambda_handler(event, context):
         parameters = task.get('parameters', {})
         s3_url = task.get('s3_url', '')
         created_at = task.get('created_at', '')
-        completed_at = datetime.utcnow().isoformat()
+        completed_at = datetime.now(timezone.utc).isoformat()
         total_subtasks = task.get('total_subtasks', 0)
         completed_subtasks = task.get('completed_subtasks', 0)
         

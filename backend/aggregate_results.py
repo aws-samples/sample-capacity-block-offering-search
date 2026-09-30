@@ -18,6 +18,30 @@ tasks_table = dynamodb.Table(os.environ['TASKS_TABLE_NAME'])
 bucket_name = os.environ['RESULTS_BUCKET_NAME']
 instance_types_parameter = os.environ['INSTANCE_TYPES_PARAMETER']
 
+
+def compute_rate_per_accelerator(upfront_fee, duration_hours, instance_count, accelerator_count):
+    """Derive the per-accelerator hourly rate from a Capacity Block offering.
+
+    rate = UpfrontFee / (InstanceCount * acceleratorCount * DurationHours)
+
+    Returns the rate rounded to 4 decimals, or '' when any input is missing or
+    a divisor is zero (e.g. no capacity / unknown accelerator count).
+    """
+    try:
+        fee = float(upfront_fee)
+        hours = float(duration_hours)
+        instances = float(instance_count)
+        accelerators = float(accelerator_count)
+    except (ValueError, TypeError):
+        return ''
+
+    divisor = instances * accelerators * hours
+    if divisor <= 0:
+        return ''
+
+    return round(fee / divisor, 4)
+
+
 def lambda_handler(event, context):
     """Aggregate results and generate CSV"""
     logger.info(f"Received event: {json.dumps(event)}")
@@ -78,9 +102,9 @@ def lambda_handler(event, context):
             max_count = result.get('max_instance_count', 0)
             error = result.get('error')
             
-            # Get instance info
+            # Get instance info (accelerator specs come from the auto-refreshed config;
+            # the per-accelerator rate is derived below from the real UpfrontFee)
             instance_info = instance_types_config.get(instance_type, {})
-            rate_per_accelerator = instance_info.get('regions', {}).get(region, {}).get('ratePerAccelerator', '')
             accelerator_type = instance_info.get('acceleratorType', '')
             accelerator_count = instance_info.get('acceleratorCount', '')
             
@@ -107,7 +131,16 @@ def lambda_handler(event, context):
                     end_date_beijing = (end_dt + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
                 else:
                     end_date_beijing = ''
-                
+
+                # Derive the per-accelerator hourly rate from the real UpfrontFee:
+                # UpfrontFee / (InstanceCount * acceleratorCount * DurationHours)
+                rate_per_accelerator = compute_rate_per_accelerator(
+                    offering.get('UpfrontFee'),
+                    offering.get('CapacityBlockDurationHours'),
+                    offering.get('InstanceCount'),
+                    accelerator_count
+                )
+
                 row = [
                     region,
                     instance_type,

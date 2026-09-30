@@ -2,7 +2,7 @@ import json
 import boto3
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 logger = logging.getLogger()
@@ -35,7 +35,7 @@ def lambda_handler(event, context):
         
         # Generate task_id
         task_id = str(uuid.uuid4())
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
         
         # Parse dates
         start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))

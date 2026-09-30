@@ -1,7 +1,7 @@
 import json
 import boto3
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 logger = logging.getLogger()
@@ -30,7 +30,7 @@ def lambda_handler(event, context):
         
         parameters = task.get('parameters', {})
         created_at = task.get('created_at', '')
-        failed_at = datetime.utcnow().isoformat()
+        failed_at = datetime.now(timezone.utc).isoformat()
         
         # Update task status to FAILED
         tasks_table.update_item(

@@ -13,6 +13,8 @@ Async EC2 Capacity Block search system based on a task queue.
 - ✅ **Email Notification**: Sends email via SNS upon task completion
 - ✅ **Result Persistence**: CSV files stored in S3, available for download
 - ✅ **Task History**: View all submitted tasks and their statuses
+- ✅ **Automatic Instance Discovery**: instance types that are **actually purchasable via Capacity Blocks** (and their supported regions) are discovered via the EC2 API (at deploy time and daily) — no manual maintenance
+- ✅ **Real-time Pricing**: Per-accelerator hourly rate is derived from the actual `UpfrontFee`; no hardcoded prices
 
 ## 📷 Preview
 
@@ -63,7 +65,8 @@ capacity_block_search_async/
 ├── backend/                    # Lambda functions
 │   ├── query_capacity.py      # Binary search core logic
 │   ├── submit_task.py          # Submit task
-│   ├── aggregate_results.py    # Aggregate results and generate CSV
+│   ├── refresh_instance_types.py  # Discover instance types via EC2 API, refresh SSM
+│   ├── aggregate_results.py    # Aggregate results and generate CSV (rate derived from UpfrontFee)
 │   ├── send_notification.py    # Send email notification
 │   ├── update_task_status.py   # Update task status
 │   ├── handle_failure.py       # Error handling
@@ -78,9 +81,13 @@ capacity_block_search_async/
 ├── frontend/                   # React frontend
 │   └── src/
 │       └── data/
-│           └── instanceTypes.json
+│           └── instanceTypes.json  # Deploy-time seed / fallback; refreshed at runtime via EC2 API
 └── README.md
 ```
+
+> 💡 **Instance types and pricing are both dynamic**
+> - Instance list: the `RefreshInstanceTypes` Lambda discovers instance types at **deploy time** (CDK Trigger) and **daily** (EventBridge), then writes them to an SSM Parameter served by the `/config` endpoint. Discovery is two-step: first `DescribeInstanceTypeOfferings` / `DescribeInstanceTypes` find the P/Trn accelerated types and accelerator specs per region, then `DescribeCapacityBlockOfferings` **verifies per (type, region) whether Capacity Block purchase is actually supported** — only purchasable combinations are listed (non-CB types like p3dn and trn1.2xlarge are excluded, as are regions with no CB API; CB support also varies by region for the same type, e.g. p4d only in us-east-1/us-east-2/us-west-2). `instanceTypes.json` is only a fallback seed. **No code change is needed** when new instance types launch.
+> - Per-accelerator rate: derived from the real `UpfrontFee` returned by `describe_capacity_block_offerings` as `UpfrontFee / (InstanceCount × acceleratorCount × DurationHours)` — no hardcoded prices, no extra API calls.
 
 ## 🚀 Quick Start
 
@@ -88,7 +95,7 @@ capacity_block_search_async/
 
 - AWS CLI configured
 - Node.js 18+
-- Python 3.12+
+- Python 3.12+ (to run CDK locally; the Lambda runtime is Python 3.14)
 - AWS CDK CLI: `npm install -g aws-cdk`
 - Valid AWS account and permissions
 

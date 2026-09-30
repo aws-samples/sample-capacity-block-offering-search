@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider } from '@mui/material';
+import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider, FormHelperText, Alert } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 
@@ -63,6 +63,14 @@ function SearchForm({ onSubmit, instanceTypesData }) {
   return (
     <form onSubmit={handleSubmit}>
       <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <Alert severity="info">
+            <strong>持续时间</strong> = 预留时长（用多久，决定租期长度）；<strong>预测天数</strong> = 从开始日期起再往后查几天（找哪天有货，不改租期）。
+            <br />
+            例：开始日期 10/01、持续时间 7 天、预测天数 3 天 → 会分别查询 <em>10/01、10/02、10/03、10/04</em> 这 4 个起始日，每个都找一个 <em>7 天</em>的容量块。
+          </Alert>
+        </Grid>
+
         <Grid item xs={12} md={6}>
           <FormControl fullWidth>
             <InputLabel>实例类型</InputLabel>
@@ -93,6 +101,9 @@ function SearchForm({ onSubmit, instanceTypesData }) {
             <Select value={duration} label="持续时间" onChange={(e) => setDuration(e.target.value)}>
               {DURATIONS.map((d) => <MenuItem key={d} value={d}>{d} 天</MenuItem>)}
             </Select>
+            <FormHelperText>
+              容量块的<strong>预留时长（租期）</strong>：你要占用这批 GPU/加速卡多少天。结束日期 = 开始日期 + 持续时间。
+            </FormHelperText>
           </FormControl>
         </Grid>
 
@@ -116,6 +127,9 @@ function SearchForm({ onSubmit, instanceTypesData }) {
                 </MenuItem>
               ))}
             </Select>
+            <FormHelperText>
+              从开始日期起<strong>逐天顺延查询</strong>的天数：查哪几天有容量，不影响租期。「仅开始日期」只查当天；选 N 则查开始日期起连续 N+1 天各自的可用性。
+            </FormHelperText>
           </FormControl>
         </Grid>
 
