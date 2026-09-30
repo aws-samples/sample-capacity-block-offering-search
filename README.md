@@ -142,6 +142,19 @@ aws sns subscribe \
 
 请参考 [README.md](/frontend/README.md)
 
+## ⚙️ 可选：自定义查询凭证（跨账号 / 扩展预订窗口）
+
+`QueryCapacity` Lambda 默认使用**自身的执行角色**调用 EC2 `DescribeCapacityBlockOfferings`。若需要用**其他身份**查询（例如某账号拥有更长的 Capacity Block 预订窗口、或需跨账号查询），可为该 Lambda 配置两个环境变量：
+
+| 环境变量 | 说明 |
+|---|---|
+| `EC2_QUERY_ACCESS_KEY_ID` | 查询所用 AK |
+| `EC2_QUERY_SECRET_ACCESS_KEY` | 查询所用 SK |
+
+行为：**两者都有值时**用这对凭证；**未设置时**回退到 Lambda 执行角色（默认）。CDK 默认**不设置**这两个变量，保持开箱即用。
+
+> ⚠️ **切勿把真实 AK/SK 硬编码进代码或提交到仓库**（本仓库为公开的 aws-samples）。请通过 Lambda 环境变量、或更安全的 **Secrets Manager / SSM SecureString** 配置，并定期轮换。
+
 ## 🔒 安全建议
 
 本示例的 API 仅使用 **API Key** 保护，而 API Key 会被打包进前端产物中（属公开信息，**不是身份认证手段**）。用于生产或对外访问前，强烈建议：

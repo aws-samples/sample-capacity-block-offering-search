@@ -142,6 +142,19 @@ aws sns subscribe \
 
 See [README.md](/frontend/README.md)
 
+## ⚙️ Optional: custom query credentials (cross-account / extended booking window)
+
+By default the `QueryCapacity` Lambda calls EC2 `DescribeCapacityBlockOfferings` using **its own execution role**. To query as a **different identity** (e.g. an account with a longer Capacity Block booking window, or cross-account querying), set two environment variables on that Lambda:
+
+| Environment variable | Description |
+|---|---|
+| `EC2_QUERY_ACCESS_KEY_ID` | Access key ID used for the query |
+| `EC2_QUERY_SECRET_ACCESS_KEY` | Secret access key used for the query |
+
+Behavior: **when both are set**, those credentials are used; **when unset**, the Lambda falls back to its execution role (default). The CDK stack does **not** set these by default.
+
+> ⚠️ **Never hardcode real AK/SK in the code or commit them** (this is a public aws-samples repo). Configure them via Lambda environment variables, or preferably **Secrets Manager / SSM SecureString**, and rotate regularly.
+
 ## 🔒 Security Recommendations
 
 This sample protects its API with an **API Key only**, and that key is bundled into the frontend build (it is public information, **not an authentication mechanism**). Before using it in production or exposing it publicly, we strongly recommend:

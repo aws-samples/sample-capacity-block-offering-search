@@ -41,13 +41,29 @@ def update_state(task_id, state_key, max_capacity, search_date):
     except Exception as e:
         logger.error(f"Failed to update state for {state_key}: {str(e)}")
 
+def _ec2_client(region):
+    """Build an EC2 client.
+
+    If EC2_QUERY_ACCESS_KEY_ID / EC2_QUERY_SECRET_ACCESS_KEY are set (e.g. to
+    query Capacity Blocks using a specific/cross-account identity), use them;
+    otherwise fall back to the Lambda execution role. Credentials are read from
+    the environment/secret store only — never hardcoded in source.
+    """
+    ak = os.environ.get('EC2_QUERY_ACCESS_KEY_ID')
+    sk = os.environ.get('EC2_QUERY_SECRET_ACCESS_KEY')
+    if ak and sk:
+        return boto3.client('ec2', region_name=region,
+                            aws_access_key_id=ak, aws_secret_access_key=sk)
+    return boto3.client('ec2', region_name=region)
+
+
 def binary_search_capacity(region, instance_type, start_date, end_date, duration_hours, min_capacity=1):
     """Binary search for maximum available capacity
-    
+
     Args:
         min_capacity: Starting point for binary search (default 1)
     """
-    ec2 = boto3.client('ec2', region_name=region)
+    ec2 = _ec2_client(region)
     
     left = min_capacity
     right = 64
