@@ -144,14 +144,24 @@ aws sns subscribe \
 
 ## ⚙️ 可选：自定义查询凭证（跨账号 / 扩展预订窗口）
 
-`QueryCapacity` Lambda 默认使用**自身的执行角色**调用 EC2 `DescribeCapacityBlockOfferings`。若需要用**其他身份**查询（例如某账号拥有更长的 Capacity Block 预订窗口、或需跨账号查询），可为该 Lambda 配置两个环境变量：
+`QueryCapacity` Lambda 默认使用**自身的执行角色**调用 EC2 `DescribeCapacityBlockOfferings`。若需要用**其他身份**查询（例如某账号拥有更长的 Capacity Block 预订窗口、或需跨账号查询），可为该 Lambda 配置查询凭证。
 
-| 环境变量 | 说明 |
-|---|---|
-| `EC2_QUERY_ACCESS_KEY_ID` | 查询所用 AK |
-| `EC2_QUERY_SECRET_ACCESS_KEY` | 查询所用 SK |
+`DescribeCapacityBlockOfferings` 的限流是**按账号**计的——配置**多对凭证**可把调用分摊到多个账号各自独立的限流配额上，遇到限流时**立即轮换到下一对凭证重试**（而非长时间等待），从而显著加快查询。
 
-行为：**两者都有值时**用这对凭证；**未设置时**回退到 Lambda 执行角色（默认）。CDK 默认**不设置**这两个变量，保持开箱即用。
+**推荐：`EC2_QUERY_CREDENTIALS`（JSON 数组，可配多对）**
+```json
+[
+  {"access_key_id": "<AK1>", "secret_access_key": "<SK1>"},
+  {"access_key_id": "<AK2>", "secret_access_key": "<SK2>"}
+]
+```
+
+凭证解析优先级：
+1. `EC2_QUERY_CREDENTIALS`（JSON 数组，支持多对，用于提速）；
+2. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY`（单对，向后兼容）；
+3. 都未设置 → 回退到 Lambda 执行角色（默认）。
+
+说明：并发子任务按 `(region, 机型, 日期)` 散列选择**起始凭证**以均衡负载；单次查询内遇限流会在凭证池中轮换。CDK 默认**不设置**这些变量，保持开箱即用。
 
 > ⚠️ **切勿把真实 AK/SK 硬编码进代码或提交到仓库**（本仓库为公开的 aws-samples）。请通过 Lambda 环境变量、或更安全的 **Secrets Manager / SSM SecureString** 配置，并定期轮换。
 

@@ -144,14 +144,24 @@ See [README.md](/frontend/README.md)
 
 ## ⚙️ Optional: custom query credentials (cross-account / extended booking window)
 
-By default the `QueryCapacity` Lambda calls EC2 `DescribeCapacityBlockOfferings` using **its own execution role**. To query as a **different identity** (e.g. an account with a longer Capacity Block booking window, or cross-account querying), set two environment variables on that Lambda:
+By default the `QueryCapacity` Lambda calls EC2 `DescribeCapacityBlockOfferings` using **its own execution role**. To query as a **different identity** (e.g. an account with a longer Capacity Block booking window, or cross-account querying), configure query credentials on that Lambda.
 
-| Environment variable | Description |
-|---|---|
-| `EC2_QUERY_ACCESS_KEY_ID` | Access key ID used for the query |
-| `EC2_QUERY_SECRET_ACCESS_KEY` | Secret access key used for the query |
+`DescribeCapacityBlockOfferings` is rate-limited **per account**, so configuring **multiple credential pairs** spreads calls across several accounts' independent rate limits and, on throttling, **rotates to the next pair immediately** instead of waiting — significantly speeding up queries.
 
-Behavior: **when both are set**, those credentials are used; **when unset**, the Lambda falls back to its execution role (default). The CDK stack does **not** set these by default.
+**Recommended: `EC2_QUERY_CREDENTIALS` (JSON array, multiple pairs)**
+```json
+[
+  {"access_key_id": "<AK1>", "secret_access_key": "<SK1>"},
+  {"access_key_id": "<AK2>", "secret_access_key": "<SK2>"}
+]
+```
+
+Resolution order:
+1. `EC2_QUERY_CREDENTIALS` (JSON array, multiple pairs, for speed);
+2. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY` (single pair, backward compatible);
+3. none set → fall back to the Lambda execution role (default).
+
+Concurrent subtasks pick a **starting credential** by hashing `(region, instance_type, date)` to balance load, and rotate through the pool on throttling within a single query. The CDK stack does **not** set these by default.
 
 > ⚠️ **Never hardcode real AK/SK in the code or commit them** (this is a public aws-samples repo). Configure them via Lambda environment variables, or preferably **Secrets Manager / SSM SecureString**, and rotate regularly.
 

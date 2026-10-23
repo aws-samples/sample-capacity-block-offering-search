@@ -2,6 +2,7 @@ import json
 import boto3
 import logging
 import time
+import zlib
 from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 import os
@@ -41,20 +42,56 @@ def update_state(task_id, state_key, max_capacity, search_date):
     except Exception as e:
         logger.error(f"Failed to update state for {state_key}: {str(e)}")
 
-def _ec2_client(region):
-    """Build an EC2 client.
+def _load_credentials():
+    """Load the pool of EC2 query credentials (read only from the environment).
 
-    If EC2_QUERY_ACCESS_KEY_ID / EC2_QUERY_SECRET_ACCESS_KEY are set (e.g. to
-    query Capacity Blocks using a specific/cross-account identity), use them;
-    otherwise fall back to the Lambda execution role. Credentials are read from
-    the environment/secret store only — never hardcoded in source.
+    Priority:
+      1. EC2_QUERY_CREDENTIALS - JSON array of {"access_key_id","secret_access_key"}.
+         Multiple pairs let queries spread across several accounts' independent
+         Capacity Block describe rate limits, so throttling causes far fewer waits.
+      2. EC2_QUERY_ACCESS_KEY_ID / EC2_QUERY_SECRET_ACCESS_KEY - single pair (back-compat).
+      3. [] - fall back to the Lambda execution role.
+
+    Credentials are never hardcoded in source.
     """
-    ak = os.environ.get('EC2_QUERY_ACCESS_KEY_ID')
-    sk = os.environ.get('EC2_QUERY_SECRET_ACCESS_KEY')
-    if ak and sk:
-        return boto3.client('ec2', region_name=region,
-                            aws_access_key_id=ak, aws_secret_access_key=sk)
-    return boto3.client('ec2', region_name=region)
+    creds = []
+    raw = os.environ.get('EC2_QUERY_CREDENTIALS')
+    if raw:
+        try:
+            for c in json.loads(raw):
+                ak = c.get('access_key_id')
+                sk = c.get('secret_access_key')
+                if ak and sk:
+                    creds.append({'access_key_id': ak, 'secret_access_key': sk})
+        except Exception as e:
+            logger.warning(f"Failed to parse EC2_QUERY_CREDENTIALS: {str(e)}")
+
+    if not creds:
+        ak = os.environ.get('EC2_QUERY_ACCESS_KEY_ID')
+        sk = os.environ.get('EC2_QUERY_SECRET_ACCESS_KEY')
+        if ak and sk:
+            creds.append({'access_key_id': ak, 'secret_access_key': sk})
+
+    return creds
+
+
+# Loaded once per container; values live only in the Lambda environment.
+CREDENTIALS = _load_credentials()
+
+
+def _build_clients(region):
+    """Build one EC2 client per credential for the region.
+
+    With no credentials configured, returns a single execution-role client.
+    """
+    if not CREDENTIALS:
+        return [boto3.client('ec2', region_name=region)]
+    return [
+        boto3.client('ec2', region_name=region,
+                     aws_access_key_id=c['access_key_id'],
+                     aws_secret_access_key=c['secret_access_key'])
+        for c in CREDENTIALS
+    ]
 
 
 def binary_search_capacity(region, instance_type, start_date, end_date, duration_hours, min_capacity=1):
@@ -63,20 +100,31 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
     Args:
         min_capacity: Starting point for binary search (default 1)
     """
-    ec2 = _ec2_client(region)
-    
+    clients = _build_clients(region)
+    pool_size = len(clients)
+
+    # Spread concurrent subtasks across the credential pool so they don't all
+    # hammer the first account. Deterministic per (region, instance_type, date)
+    # via crc32 (stable across processes, unlike the salted built-in hash()).
+    search_date = start_date.date().isoformat() if isinstance(start_date, datetime) else str(start_date)
+    cred_idx = zlib.crc32(f"{region}#{instance_type}#{search_date}".encode()) % pool_size
+
     left = min_capacity
     right = 64
     max_available = 0
     best_offerings = []
-    
+
+    throttle_codes = ('RequestLimitExceeded', 'CapacityBlockDescribeLimitExceeded')
+
     while left <= right:
         mid = (left + right) // 2
-        retry_count = 0
-        
-        while retry_count < 3:
+        attempts = 0
+        max_attempts = pool_size * 3  # up to 3 full rotations through the pool
+
+        while True:
+            ec2 = clients[cred_idx % pool_size]
             try:
-                logger.info(f"{region}: Checking capacity for count={mid}")
+                logger.info(f"{region}: Checking capacity for count={mid} (cred {cred_idx % pool_size + 1}/{pool_size})")
                 response = ec2.describe_capacity_block_offerings(
                     InstanceType=instance_type,
                     InstanceCount=mid,
@@ -84,7 +132,7 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
                     EndDateRange=end_date,
                     CapacityDurationHours=duration_hours
                 )
-                
+
                 if response['CapacityBlockOfferings']:
                     max_available = mid
                     best_offerings = [
@@ -101,23 +149,27 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
                     logger.info(f"{region}: No capacity at count={mid}")
                     right = mid - 1
                 break
-                
+
             except ClientError as e:
                 error_code = e.response['Error']['Code']
-                
-                if error_code in ['RequestLimitExceeded', 'CapacityBlockDescribeLimitExceeded']:
-                    retry_count += 1
-                    if retry_count >= 3:
-                        logger.error(f"{region}: Max retries reached for count={mid}, error={error_code}")
+
+                if error_code in throttle_codes:
+                    attempts += 1
+                    cred_idx += 1  # rotate to the next credential immediately
+                    if attempts >= max_attempts:
+                        logger.error(f"{region}: All {pool_size} credential(s) throttled for count={mid}, error={error_code}")
                         raise
-                    
-                    # CapacityBlockDescribeLimitExceeded needs longer wait
-                    wait_time = 20 if error_code == 'CapacityBlockDescribeLimitExceeded' else 10
-                    logger.warning(f"{region}: {error_code} at count={mid}, retry {retry_count}/3, waiting {wait_time}s")
-                    time.sleep(wait_time)
+                    # Only back off after cycling through the whole pool once
+                    if attempts % pool_size == 0:
+                        wait_time = 20 if error_code == 'CapacityBlockDescribeLimitExceeded' else 10
+                        logger.warning(f"{region}: whole pool throttled at count={mid}, waiting {wait_time}s")
+                        time.sleep(wait_time)
+                    else:
+                        logger.info(f"{region}: {error_code} at count={mid}, rotating credential")
+                    continue
                 else:
                     raise
-    
+
     return max_available, best_offerings
 
 def lambda_handler(event, context):
