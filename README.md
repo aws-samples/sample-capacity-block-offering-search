@@ -161,7 +161,7 @@ aws sns subscribe \
 2. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY`（单对，向后兼容）；
 3. 都未设置 → 回退到 Lambda 执行角色（默认）。
 
-说明：并发子任务按 `(region, 机型, 日期)` 散列选择**起始凭证**以均衡负载；单次查询内遇限流会在凭证池中轮换。CDK 默认**不设置**这些变量，保持开箱即用。
+说明：并发子任务按 `(region, 机型, 日期)` 散列选择**起始凭证**以均衡负载；单次查询内遇限流会在凭证池中轮换。**若某对凭证不可用**（如 AK/SK 无效、账号待验证 `PendingVerification`、无权限），会被**自动剔除并转到下一对**，不会导致查询失败（仅当池中全部不可用时才报错）。CDK 默认**不设置**这些变量，保持开箱即用。
 
 > ⚠️ **切勿把真实 AK/SK 硬编码进代码或提交到仓库**（本仓库为公开的 aws-samples）。请通过 Lambda 环境变量、或更安全的 **Secrets Manager / SSM SecureString** 配置，并定期轮换。
 

@@ -94,6 +94,34 @@ def _build_clients(region):
     ]
 
 
+# Transient, per-account rate limits — rotate to the next credential, back off only
+# after cycling the whole live pool.
+THROTTLE_CODES = frozenset({'RequestLimitExceeded', 'CapacityBlockDescribeLimitExceeded'})
+
+# Credential-level failures meaning this credential cannot serve the request at all
+# (bad key, unverified account, no permission). Skip the credential and fail over to
+# the next one instead of hard-failing the subtask.
+DEAD_CRED_CODES = frozenset({
+    'AuthFailure', 'UnrecognizedClientException', 'InvalidClientTokenId',
+    'SignatureDoesNotMatch', 'AccessDenied', 'AccessDeniedException',
+    'UnauthorizedOperation', 'PendingVerification', 'OptInRequired',
+})
+
+# Container-level cache of credential indices found unusable (DEAD_CRED_CODES).
+# Lazily populated on first failure so warm invocations skip them outright —
+# this also covers states STS can't detect up front, e.g. PendingVerification.
+_DEAD_CREDS = set()
+
+
+def _next_live_idx(idx, pool_size):
+    """Return the next credential index (from idx) not known-dead, or None if all dead."""
+    for step in range(pool_size):
+        j = (idx + step) % pool_size
+        if j not in _DEAD_CREDS:
+            return j
+    return None
+
+
 def binary_search_capacity(region, instance_type, start_date, end_date, duration_hours, min_capacity=1):
     """Binary search for maximum available capacity
 
@@ -114,17 +142,21 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
     max_available = 0
     best_offerings = []
 
-    throttle_codes = ('RequestLimitExceeded', 'CapacityBlockDescribeLimitExceeded')
-
     while left <= right:
         mid = (left + right) // 2
-        attempts = 0
-        max_attempts = pool_size * 3  # up to 3 full rotations through the pool
+        throttle_attempts = 0
 
         while True:
-            ec2 = clients[cred_idx % pool_size]
+            live_idx = _next_live_idx(cred_idx, pool_size)
+            if live_idx is None:
+                raise RuntimeError(
+                    f"{region}: no usable query credential (all {pool_size} failed auth/verification)"
+                )
+            cred_idx = live_idx
+            ec2 = clients[cred_idx]
+            live_count = pool_size - len(_DEAD_CREDS)
             try:
-                logger.info(f"{region}: Checking capacity for count={mid} (cred {cred_idx % pool_size + 1}/{pool_size})")
+                logger.info(f"{region}: Checking capacity for count={mid} (cred {cred_idx + 1}/{pool_size})")
                 response = ec2.describe_capacity_block_offerings(
                     InstanceType=instance_type,
                     InstanceCount=mid,
@@ -153,22 +185,31 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
             except ClientError as e:
                 error_code = e.response['Error']['Code']
 
-                if error_code in throttle_codes:
-                    attempts += 1
+                if error_code in DEAD_CRED_CODES:
+                    # Permanently unusable credential — drop it from the pool and
+                    # fail over to the next one (no backoff).
+                    _DEAD_CREDS.add(cred_idx)
+                    logger.warning(f"{region}: credential {cred_idx + 1}/{pool_size} unusable ({error_code}); dropping from pool and failing over")
+                    cred_idx += 1
+                    continue
+
+                if error_code in THROTTLE_CODES:
+                    throttle_attempts += 1
                     cred_idx += 1  # rotate to the next credential immediately
-                    if attempts >= max_attempts:
-                        logger.error(f"{region}: All {pool_size} credential(s) throttled for count={mid}, error={error_code}")
+                    if throttle_attempts >= max(1, live_count) * 3:
+                        logger.error(f"{region}: all {max(1, live_count)} live credential(s) throttled for count={mid}, error={error_code}")
                         raise
-                    # Only back off after cycling through the whole pool once
-                    if attempts % pool_size == 0:
+                    # Only back off after cycling through the whole live pool once
+                    if throttle_attempts % max(1, live_count) == 0:
                         wait_time = 20 if error_code == 'CapacityBlockDescribeLimitExceeded' else 10
                         logger.warning(f"{region}: whole pool throttled at count={mid}, waiting {wait_time}s")
                         time.sleep(wait_time)
                     else:
                         logger.info(f"{region}: {error_code} at count={mid}, rotating credential")
                     continue
-                else:
-                    raise
+
+                # Genuine request error (e.g. InvalidParameterValue) — surface it.
+                raise
 
     return max_available, best_offerings
 

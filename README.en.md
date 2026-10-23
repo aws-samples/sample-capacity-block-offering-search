@@ -161,7 +161,7 @@ Resolution order:
 2. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY` (single pair, backward compatible);
 3. none set → fall back to the Lambda execution role (default).
 
-Concurrent subtasks pick a **starting credential** by hashing `(region, instance_type, date)` to balance load, and rotate through the pool on throttling within a single query. The CDK stack does **not** set these by default.
+Concurrent subtasks pick a **starting credential** by hashing `(region, instance_type, date)` to balance load, and rotate through the pool on throttling within a single query. **If a credential is unusable** (invalid AK/SK, account `PendingVerification`, missing permission), it is **automatically dropped and failed over** to the next one rather than failing the query (an error is raised only if every credential is unusable). The CDK stack does **not** set these by default.
 
 > ⚠️ **Never hardcode real AK/SK in the code or commit them** (this is a public aws-samples repo). Configure them via Lambda environment variables, or preferably **Secrets Manager / SSM SecureString**, and rotate regularly.
 
