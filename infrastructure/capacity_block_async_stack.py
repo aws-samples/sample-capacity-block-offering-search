@@ -151,6 +151,28 @@ class CapacityBlockAsyncStack(Stack):
             display_name="Capacity Block Search Notifications"
         )
 
+        # Optional SSM SecureString holding the JSON array of query credentials
+        # (single source of truth for the credential pool). NOT created by this
+        # stack — operators create/populate it out-of-band so no secret ever
+        # lives in the template or git. Lambdas fall back to the execution role
+        # when it is absent.
+        query_creds_param_name = "/capacity-block-search/query-credentials"
+        query_creds_param_arn = self.format_arn(
+            service="ssm", resource="parameter",
+            resource_name=query_creds_param_name.lstrip("/")
+        )
+
+        def grant_query_credentials(fn):
+            fn.add_to_role_policy(iam.PolicyStatement(
+                actions=["ssm:GetParameter"],
+                resources=[query_creds_param_arn]
+            ))
+            fn.add_to_role_policy(iam.PolicyStatement(
+                actions=["kms:Decrypt"],
+                resources=["*"],
+                conditions={"StringEquals": {"kms:ViaService": f"ssm.{self.region}.amazonaws.com"}}
+            ))
+
         # Lambda: Query Capacity (二分查找)
         query_capacity_lambda = lambda_.Function(
             self, "QueryCapacityLambda",
@@ -162,9 +184,10 @@ class CapacityBlockAsyncStack(Stack):
             environment={
                 "RESULTS_TABLE_NAME": results_table.table_name,
                 "TASKS_TABLE_NAME": tasks_table.table_name,
+                "QUERY_CREDENTIALS_PARAMETER": query_creds_param_name,
             }
         )
-        
+
         results_table.grant_read_write_data(query_capacity_lambda)
         tasks_table.grant_read_write_data(query_capacity_lambda)
         query_capacity_lambda.add_to_role_policy(
@@ -173,6 +196,7 @@ class CapacityBlockAsyncStack(Stack):
                 resources=["*"]
             )
         )
+        grant_query_credentials(query_capacity_lambda)
 
         # Lambda: Aggregate Results
         aggregate_results_lambda = lambda_.Function(
@@ -264,23 +288,28 @@ class CapacityBlockAsyncStack(Stack):
             result_path=sfn.JsonPath.DISCARD
         )
 
-        wait_10_seconds = sfn.Wait(
-            self, "Wait15Seconds",
-            time=sfn.WaitTime.duration(Duration.seconds(15))
+        # Wait between subtasks; duration comes from the input (auto-scaled by
+        # submit_task to the number of query accounts).
+        wait_between_subtasks = sfn.Wait(
+            self, "WaitBetweenSubtasks",
+            time=sfn.WaitTime.seconds_path("$.wait_seconds")
         )
 
-        # Sequential subtasks per region
+        # Subtasks per region; concurrency comes from the input (auto-scaled to
+        # the number of query accounts so each parallel subtask tends to a
+        # different account's rate limit).
         subtask_iterator = sfn.Map(
             self, "SubtaskIterator",
-            max_concurrency=1,
+            max_concurrency_path=sfn.JsonPath.string_at("$.concurrency"),
             items_path=sfn.JsonPath.string_at("$.subtasks"),
             item_selector={
                 "task_id": sfn.JsonPath.string_at("$.task_id"),
+                "wait_seconds": sfn.JsonPath.number_at("$.wait_seconds"),
                 "subtask": sfn.JsonPath.string_at("$$.Map.Item.Value")
             },
             result_path=sfn.JsonPath.DISCARD
         )
-        subtask_iterator.item_processor(query_capacity_task.next(wait_10_seconds))
+        subtask_iterator.item_processor(query_capacity_task.next(wait_between_subtasks))
 
         # Parallel regions
         region_iterator = sfn.Map(
@@ -289,6 +318,8 @@ class CapacityBlockAsyncStack(Stack):
             items_path=sfn.JsonPath.string_at("$.regions_with_subtasks"),
             item_selector={
                 "task_id": sfn.JsonPath.string_at("$.task_id"),
+                "concurrency": sfn.JsonPath.number_at("$.concurrency"),
+                "wait_seconds": sfn.JsonPath.number_at("$.wait_seconds"),
                 "region": sfn.JsonPath.string_at("$$.Map.Item.Value.region"),
                 "subtasks": sfn.JsonPath.string_at("$$.Map.Item.Value.subtasks")
             },
@@ -355,11 +386,13 @@ class CapacityBlockAsyncStack(Stack):
             environment={
                 "TASKS_TABLE_NAME": tasks_table.table_name,
                 "STATE_MACHINE_ARN": state_machine.state_machine_arn,
+                "QUERY_CREDENTIALS_PARAMETER": query_creds_param_name,
             }
         )
-        
+
         tasks_table.grant_write_data(submit_task_lambda)
         state_machine.grant_start_execution(submit_task_lambda)
+        grant_query_credentials(submit_task_lambda)
 
         # Lambda: List Tasks
         list_tasks_lambda = lambda_.Function(

@@ -148,22 +148,32 @@ By default the `QueryCapacity` Lambda calls EC2 `DescribeCapacityBlockOfferings`
 
 `DescribeCapacityBlockOfferings` is rate-limited **per account**, so configuring **multiple credential pairs** spreads calls across several accounts' independent rate limits and, on throttling, **rotates to the next pair immediately** instead of waiting — significantly speeding up queries.
 
-**Recommended: `EC2_QUERY_CREDENTIALS` (JSON array, multiple pairs)**
+**Recommended: an SSM SecureString parameter (single source of truth)**
+
+Create a **SecureString** parameter named `/capacity-block-search/query-credentials` whose value is a JSON array (you create/populate it — the stack does not, so no secret enters the template or git):
 ```json
 [
   {"access_key_id": "<AK1>", "secret_access_key": "<SK1>"},
   {"access_key_id": "<AK2>", "secret_access_key": "<SK2>"}
 ]
 ```
+```bash
+aws ssm put-parameter --name /capacity-block-search/query-credentials \
+  --type SecureString --value '[{"access_key_id":"...","secret_access_key":"..."}]' \
+  --region <region>
+```
 
 Resolution order:
-1. `EC2_QUERY_CREDENTIALS` (JSON array, multiple pairs, for speed);
-2. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY` (single pair, backward compatible);
-3. none set → fall back to the Lambda execution role (default).
+1. SSM SecureString `/capacity-block-search/query-credentials` (recommended, multiple pairs);
+2. `EC2_QUERY_CREDENTIALS` env var (JSON array, backward compatible);
+3. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY` (single pair, backward compatible);
+4. none set → fall back to the Lambda execution role (default).
 
-Concurrent subtasks pick a **starting credential** by hashing `(region, instance_type, date)` to balance load, and rotate through the pool on throttling within a single query. **If a credential is unusable** (invalid AK/SK, account `PendingVerification`, missing permission), it is **automatically dropped and failed over** to the next one rather than failing the query (an error is raised only if every credential is unusable). The CDK stack does **not** set these by default.
+**Auto-scaling by account count**: `SubmitTask` reads the number of credential pairs N and sets the Step Functions subtask **concurrency = min(N, 10)** and **inter-subtask wait = (N==1 ? 10s : 2s)**, injected into the execution input (read at runtime via Map `MaxConcurrencyPath` / Wait `SecondsPath`). More accounts → higher concurrency and shorter waits → faster queries, with no manual tuning (override via `MAX_SUBTASK_CONCURRENCY` / `SINGLE_ACCT_WAIT_SECONDS` / `MULTI_ACCT_WAIT_SECONDS` env vars).
 
-> ⚠️ **Never hardcode real AK/SK in the code or commit them** (this is a public aws-samples repo). Configure them via Lambda environment variables, or preferably **Secrets Manager / SSM SecureString**, and rotate regularly.
+Concurrent subtasks pick a **starting credential** by hashing `(region, instance_type, date)` to balance load, and rotate through the pool on throttling. **If a credential is unusable** (invalid AK/SK, account `PendingVerification`, missing permission), it is **automatically dropped and failed over** to the next one rather than failing the query (an error is raised only if every credential is unusable). The stack sets no credentials by default (execution role out of the box).
+
+> ⚠️ **Never hardcode real AK/SK in the code or commit them** (this is a public aws-samples repo). Use the SSM SecureString above (or Secrets Manager), and rotate regularly.
 
 ## 🔒 Security Recommendations
 

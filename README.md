@@ -148,22 +148,32 @@ aws sns subscribe \
 
 `DescribeCapacityBlockOfferings` 的限流是**按账号**计的——配置**多对凭证**可把调用分摊到多个账号各自独立的限流配额上，遇到限流时**立即轮换到下一对凭证重试**（而非长时间等待），从而显著加快查询。
 
-**推荐：`EC2_QUERY_CREDENTIALS`（JSON 数组，可配多对）**
+**推荐：SSM SecureString 参数（单一真相源）**
+
+创建名为 `/capacity-block-search/query-credentials` 的 **SecureString** 参数，值为 JSON 数组（由你自行创建/填充，栈不会创建它，避免密钥进入模板或 git）：
 ```json
 [
   {"access_key_id": "<AK1>", "secret_access_key": "<SK1>"},
   {"access_key_id": "<AK2>", "secret_access_key": "<SK2>"}
 ]
 ```
+```bash
+aws ssm put-parameter --name /capacity-block-search/query-credentials \
+  --type SecureString --value '[{"access_key_id":"...","secret_access_key":"..."}]' \
+  --region <region>
+```
 
 凭证解析优先级：
-1. `EC2_QUERY_CREDENTIALS`（JSON 数组，支持多对，用于提速）；
-2. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY`（单对，向后兼容）；
-3. 都未设置 → 回退到 Lambda 执行角色（默认）。
+1. SSM SecureString `/capacity-block-search/query-credentials`（推荐，多对）；
+2. `EC2_QUERY_CREDENTIALS` 环境变量（JSON 数组，向后兼容）；
+3. `EC2_QUERY_ACCESS_KEY_ID` / `EC2_QUERY_SECRET_ACCESS_KEY`（单对，向后兼容）；
+4. 都未设置 → 回退到 Lambda 执行角色（默认）。
 
-说明：并发子任务按 `(region, 机型, 日期)` 散列选择**起始凭证**以均衡负载；单次查询内遇限流会在凭证池中轮换。**若某对凭证不可用**（如 AK/SK 无效、账号待验证 `PendingVerification`、无权限），会被**自动剔除并转到下一对**，不会导致查询失败（仅当池中全部不可用时才报错）。CDK 默认**不设置**这些变量，保持开箱即用。
+**自动按账号数伸缩**：`SubmitTask` 读取上面的凭证数 N，自动设置 Step Functions 的子任务**并发=min(N, 10)**、**子任务间等待=（N==1 ? 10s : 2s）**，注入执行输入（Map `MaxConcurrencyPath` / Wait `SecondsPath` 运行时读取）。账号越多 → 并发越高、等待越短 → 查询越快，无需手工调参（可用 `MAX_SUBTASK_CONCURRENCY` / `SINGLE_ACCT_WAIT_SECONDS` / `MULTI_ACCT_WAIT_SECONDS` 环境变量覆盖）。
 
-> ⚠️ **切勿把真实 AK/SK 硬编码进代码或提交到仓库**（本仓库为公开的 aws-samples）。请通过 Lambda 环境变量、或更安全的 **Secrets Manager / SSM SecureString** 配置，并定期轮换。
+其他说明：并发子任务按 `(region, 机型, 日期)` 散列选择**起始凭证**均衡负载；单次查询内遇限流在池中轮换。**若某对凭证不可用**（AK/SK 无效、账号待验证 `PendingVerification`、无权限），会被**自动剔除并转到下一对**，不会使查询失败（仅当全部不可用才报错）。栈默认**不设置**凭证，开箱即走执行角色。
+
+> ⚠️ **切勿把真实 AK/SK 硬编码进代码或提交到仓库**（本仓库为公开的 aws-samples）。请用上面的 SSM SecureString（或 Secrets Manager）配置，并定期轮换。
 
 ## 🔒 安全建议
 

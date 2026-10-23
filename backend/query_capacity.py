@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 import os
 
+from query_credentials import load_credentials
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -42,41 +44,8 @@ def update_state(task_id, state_key, max_capacity, search_date):
     except Exception as e:
         logger.error(f"Failed to update state for {state_key}: {str(e)}")
 
-def _load_credentials():
-    """Load the pool of EC2 query credentials (read only from the environment).
-
-    Priority:
-      1. EC2_QUERY_CREDENTIALS - JSON array of {"access_key_id","secret_access_key"}.
-         Multiple pairs let queries spread across several accounts' independent
-         Capacity Block describe rate limits, so throttling causes far fewer waits.
-      2. EC2_QUERY_ACCESS_KEY_ID / EC2_QUERY_SECRET_ACCESS_KEY - single pair (back-compat).
-      3. [] - fall back to the Lambda execution role.
-
-    Credentials are never hardcoded in source.
-    """
-    creds = []
-    raw = os.environ.get('EC2_QUERY_CREDENTIALS')
-    if raw:
-        try:
-            for c in json.loads(raw):
-                ak = c.get('access_key_id')
-                sk = c.get('secret_access_key')
-                if ak and sk:
-                    creds.append({'access_key_id': ak, 'secret_access_key': sk})
-        except Exception as e:
-            logger.warning(f"Failed to parse EC2_QUERY_CREDENTIALS: {str(e)}")
-
-    if not creds:
-        ak = os.environ.get('EC2_QUERY_ACCESS_KEY_ID')
-        sk = os.environ.get('EC2_QUERY_SECRET_ACCESS_KEY')
-        if ak and sk:
-            creds.append({'access_key_id': ak, 'secret_access_key': sk})
-
-    return creds
-
-
-# Loaded once per container; values live only in the Lambda environment.
-CREDENTIALS = _load_credentials()
+# Resolved once per container from the shared source (SSM SecureString / env).
+CREDENTIALS = load_credentials()
 
 
 def _build_clients(region):

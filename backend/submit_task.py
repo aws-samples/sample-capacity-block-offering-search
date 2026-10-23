@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 import os
 
+from query_credentials import count_accounts
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -13,6 +15,26 @@ sfn = boto3.client('stepfunctions')
 
 tasks_table = dynamodb.Table(os.environ['TASKS_TABLE_NAME'])
 state_machine_arn = os.environ['STATE_MACHINE_ARN']
+
+# Auto-scale the per-region subtask concurrency and inter-subtask wait to the
+# number of query accounts (each account has its own CB describe rate limit).
+MAX_SUBTASK_CONCURRENCY = int(os.environ.get('MAX_SUBTASK_CONCURRENCY', '10'))
+SINGLE_ACCT_WAIT_SECONDS = int(os.environ.get('SINGLE_ACCT_WAIT_SECONDS', '10'))
+MULTI_ACCT_WAIT_SECONDS = int(os.environ.get('MULTI_ACCT_WAIT_SECONDS', '2'))
+
+
+def _concurrency_plan():
+    """Derive (concurrency, wait_seconds) from the number of query accounts.
+
+    More accounts -> more parallel subtasks and a shorter wait, because the
+    per-account CB describe rate limit is the bottleneck and in-lambda credential
+    rotation already absorbs throttling.
+    """
+    n = count_accounts()
+    concurrency = min(n, MAX_SUBTASK_CONCURRENCY)
+    wait_seconds = SINGLE_ACCT_WAIT_SECONDS if n == 1 else MULTI_ACCT_WAIT_SECONDS
+    logger.info(f"Query accounts={n} -> subtask concurrency={concurrency}, wait={wait_seconds}s")
+    return concurrency, wait_seconds
 
 def lambda_handler(event, context):
     """Submit a new capacity search task"""
@@ -91,13 +113,18 @@ def lambda_handler(event, context):
             'completed_subtasks': 0
         })
         
+        # Auto-scale concurrency/wait to the number of query accounts
+        concurrency, wait_seconds = _concurrency_plan()
+
         # Start Step Functions execution
         execution_response = sfn.start_execution(
             stateMachineArn=state_machine_arn,
             name=f"task-{task_id}",
             input=json.dumps({
                 'task_id': task_id,
-                'regions_with_subtasks': regions_with_subtasks
+                'regions_with_subtasks': regions_with_subtasks,
+                'concurrency': concurrency,
+                'wait_seconds': wait_seconds
             })
         )
         
