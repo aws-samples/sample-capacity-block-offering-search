@@ -63,8 +63,9 @@ Lambda: SubmitTask
 ```
 capacity_block_search_async/
 ├── backend/                    # Lambda 函数
-│   ├── query_capacity.py      # 二分查找核心逻辑
-│   ├── submit_task.py          # 提交任务
+│   ├── query_capacity.py      # 二分查找核心逻辑（多凭证池 + 限流轮换/失效转移）
+│   ├── query_credentials.py    # 凭证池解析（SSM SecureString / env → 角色兜底），共享模块
+│   ├── submit_task.py          # 提交任务（按账号数自动伸缩并发/等待）
 │   ├── refresh_instance_types.py  # 通过 EC2 API 自动发现机型并刷新 SSM
 │   ├── aggregate_results.py    # 聚合结果生成 CSV（单价由 UpfrontFee 反算）
 │   ├── send_notification.py    # 发送邮件通知

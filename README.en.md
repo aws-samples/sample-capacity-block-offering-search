@@ -63,8 +63,9 @@ Lambda: SubmitTask
 ```
 capacity_block_search_async/
 ├── backend/                    # Lambda functions
-│   ├── query_capacity.py      # Binary search core logic
-│   ├── submit_task.py          # Submit task
+│   ├── query_capacity.py      # Binary search core logic (credential pool + throttle rotation / failover)
+│   ├── query_credentials.py    # Credential pool resolver (SSM SecureString / env → role fallback), shared module
+│   ├── submit_task.py          # Submit task (auto-scales concurrency/wait by account count)
 │   ├── refresh_instance_types.py  # Discover instance types via EC2 API, refresh SSM
 │   ├── aggregate_results.py    # Aggregate results and generate CSV (rate derived from UpfrontFee)
 │   ├── send_notification.py    # Send email notification
