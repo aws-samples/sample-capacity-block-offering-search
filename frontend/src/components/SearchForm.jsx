@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider, FormHelperText, Alert, CircularProgress } from '@mui/material';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider, FormHelperText, Alert, CircularProgress, ListItemText } from '@mui/material';
 import { Send, RestartAlt } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
@@ -13,51 +13,67 @@ function SearchForm({ onSubmit, instanceTypesData }) {
   const [startDate, setStartDate] = useState(dayjs());
   const [forecastDays, setForecastDays] = useState(0);
   const [regions, setRegions] = useState([]);
-  const [INSTANCE_TYPES, setInstanceTypesList] = useState([]);
-  const [ALL_REGIONS, setAllRegions] = useState([]);
-  const [REGION_GROUPS, setRegionGroups] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const initializedRef = useRef(false);
 
+  const INSTANCE_TYPES = useMemo(
+    () => (instanceTypesData ? Object.keys(instanceTypesData) : []),
+    [instanceTypesData]
+  );
+
+  // Regions are scoped to those supported by the SELECTED instance types, so a
+  // user can't pick a region that would be silently dropped at submit time.
+  const availableRegions = useMemo(() => {
+    if (!instanceTypesData) return [];
+    const set = new Set();
+    instanceTypes.forEach(t => Object.keys(instanceTypesData[t]?.regions || {}).forEach(r => set.add(r)));
+    return Array.from(set).sort();
+  }, [instanceTypesData, instanceTypes]);
+
+  const REGION_GROUPS = useMemo(() => {
+    const groups = {};
+    availableRegions.forEach(r => {
+      const prefix = r.split('-')[0];
+      (groups[prefix] = groups[prefix] || []).push(r);
+    });
+    return groups;
+  }, [availableRegions]);
+
+  // Initialize from cache / defaults once config arrives.
   useEffect(() => {
     if (!instanceTypesData) return;
-    
-    const instanceTypesList = Object.keys(instanceTypesData);
-    setInstanceTypesList(instanceTypesList);
-    
-    const allRegions = new Set();
-    Object.values(instanceTypesData).forEach(instance => {
-      Object.keys(instance.regions).forEach(region => allRegions.add(region));
-    });
-    const sortedRegions = Array.from(allRegions).sort();
-    setAllRegions(sortedRegions);
-    
-    const groups = {};
-    sortedRegions.forEach(region => {
-      const prefix = region.split('-')[0];
-      if (!groups[prefix]) groups[prefix] = [];
-      groups[prefix].push(region);
-    });
-    setRegionGroups(groups);
-
-    // Restore last-used selections from cache (filtered to still-valid options),
-    // otherwise fall back to sensible defaults.
+    const list = Object.keys(instanceTypesData);
     let cached = null;
     try { cached = JSON.parse(localStorage.getItem(FORM_KEY) || 'null'); } catch { cached = null; }
+
+    let types = list[0] ? [list[0]] : [];
     if (cached) {
-      const validTypes = (cached.instanceTypes || []).filter(t => instanceTypesList.includes(t));
-      const validRegions = (cached.regions || []).filter(r => sortedRegions.includes(r));
-      setInstanceTypes(validTypes.length ? validTypes : (instanceTypesList[0] ? [instanceTypesList[0]] : []));
-      setRegions(validRegions.length ? validRegions : sortedRegions);
+      const valid = (cached.instanceTypes || []).filter(t => list.includes(t));
+      if (valid.length) types = valid;
       if (cached.duration) setDuration(cached.duration);
       if (typeof cached.forecastDays === 'number') setForecastDays(cached.forecastDays);
       const d = cached.startDate ? dayjs(cached.startDate) : null;
       setStartDate(d && d.isValid() && !d.isBefore(dayjs(), 'day') ? d : dayjs());
-    } else {
-      setInstanceTypes(instanceTypesList.length > 0 ? [instanceTypesList[0]] : []);
-      setRegions(sortedRegions);
     }
+
+    const avail = new Set();
+    types.forEach(t => Object.keys(instanceTypesData[t]?.regions || {}).forEach(r => avail.add(r)));
+    let regs = Array.from(avail);
+    if (cached && cached.regions) {
+      const valid = cached.regions.filter(r => avail.has(r));
+      if (valid.length) regs = valid;
+    }
+    setInstanceTypes(types);
+    setRegions(regs);
+    initializedRef.current = true;
   }, [instanceTypesData]);
+
+  // When selected instance types change, drop regions that are no longer supported.
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    setRegions(prev => prev.filter(r => availableRegions.includes(r)));
+  }, [availableRegions]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -65,7 +81,7 @@ function SearchForm({ onSubmit, instanceTypesData }) {
     setSubmitting(true);
     try {
       await onSubmit({ instanceTypes, duration, startDate, forecastDays, regions });
-      // Cache the selections for next time (only after a successful submit)
+      // Cache selections for next time (only after a successful submit)
       try {
         localStorage.setItem(FORM_KEY, JSON.stringify({
           instanceTypes, duration, forecastDays, regions,
@@ -81,19 +97,22 @@ function SearchForm({ onSubmit, instanceTypesData }) {
 
   const handleReset = () => {
     localStorage.removeItem(FORM_KEY);
-    setInstanceTypes(INSTANCE_TYPES.length ? [INSTANCE_TYPES[0]] : []);
+    const types = INSTANCE_TYPES.length ? [INSTANCE_TYPES[0]] : [];
+    const avail = new Set();
+    types.forEach(t => Object.keys(instanceTypesData[t]?.regions || {}).forEach(r => avail.add(r)));
+    setInstanceTypes(types);
+    setRegions(Array.from(avail));
     setDuration(21);
     setForecastDays(0);
     setStartDate(dayjs());
-    setRegions(ALL_REGIONS);
   };
 
   const selectedRegionCount = regions.length;
   const estimatedSubtasks = instanceTypes.length * selectedRegionCount * (forecastDays + 1);
 
-  const handleSelectAll = () => setRegions(ALL_REGIONS);
+  const handleSelectAll = () => setRegions(availableRegions);
   const handleDeselectAll = () => setRegions([]);
-  
+
   const handleGroupToggle = (groupName) => {
     const groupRegions = REGION_GROUPS[groupName];
     const allSelected = groupRegions.every(r => regions.includes(r));
@@ -131,13 +150,20 @@ function SearchForm({ onSubmit, instanceTypesData }) {
                 </Box>
               )}
             >
-              {INSTANCE_TYPES.map((type) => (
-                <MenuItem key={type} value={type}>
-                  <Checkbox checked={instanceTypes.indexOf(type) > -1} />
-                  {type}
-                </MenuItem>
-              ))}
+              {INSTANCE_TYPES.map((type) => {
+                const info = instanceTypesData[type] || {};
+                return (
+                  <MenuItem key={type} value={type}>
+                    <Checkbox checked={instanceTypes.indexOf(type) > -1} />
+                    <ListItemText
+                      primary={type}
+                      secondary={info.acceleratorType ? `${info.acceleratorType} ×${info.acceleratorCount} · ${Object.keys(info.regions || {}).length} 区域` : undefined}
+                    />
+                  </MenuItem>
+                );
+              })}
             </Select>
+            <FormHelperText>可多选；下方区域会按所选机型支持的区域自动联动。</FormHelperText>
           </FormControl>
         </Grid>
 
@@ -180,39 +206,43 @@ function SearchForm({ onSubmit, instanceTypesData }) {
         </Grid>
 
         <Grid item xs={12}>
-          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
             <Button variant="outlined" size="small" onClick={handleSelectAll}>全选</Button>
             <Button variant="outlined" size="small" onClick={handleDeselectAll}>全不选</Button>
-            <Chip label={`已选: ${regions.length}`} color="primary" />
+            <Chip label={`已选 ${regions.length} / ${availableRegions.length}`} color="primary" />
           </Box>
           <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>选择区域</Typography>
-            <FormGroup>
-              {Object.entries(REGION_GROUPS).map(([groupName, groupRegions]) => (
-                <Box key={groupName} sx={{ mb: 2 }}>
-                  <FormControlLabel
-                    control={<Checkbox checked={groupRegions.every(r => regions.includes(r))} onChange={() => handleGroupToggle(groupName)} />}
-                    label={<Typography variant="subtitle2" fontWeight="bold">{groupName}</Typography>}
-                  />
-                  <Box sx={{ ml: 4, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {groupRegions.map((region) => (
-                      <FormControlLabel
-                        key={region}
-                        control={<Checkbox checked={regions.includes(region)} onChange={() => {
-                          if (regions.includes(region)) {
-                            setRegions(regions.filter(r => r !== region));
-                          } else {
-                            setRegions([...regions, region]);
-                          }
-                        }} size="small" />}
-                        label={region}
-                      />
-                    ))}
+            <Typography variant="subtitle2" gutterBottom>选择区域（仅显示所选机型支持 Capacity Block 的区域）</Typography>
+            {availableRegions.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">请先选择至少一个实例类型</Typography>
+            ) : (
+              <FormGroup>
+                {Object.entries(REGION_GROUPS).map(([groupName, groupRegions]) => (
+                  <Box key={groupName} sx={{ mb: 2 }}>
+                    <FormControlLabel
+                      control={<Checkbox checked={groupRegions.every(r => regions.includes(r))} onChange={() => handleGroupToggle(groupName)} />}
+                      label={<Typography variant="subtitle2" fontWeight="bold">{groupName}</Typography>}
+                    />
+                    <Box sx={{ ml: 4, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {groupRegions.map((region) => (
+                        <FormControlLabel
+                          key={region}
+                          control={<Checkbox checked={regions.includes(region)} onChange={() => {
+                            if (regions.includes(region)) {
+                              setRegions(regions.filter(r => r !== region));
+                            } else {
+                              setRegions([...regions, region]);
+                            }
+                          }} size="small" />}
+                          label={region}
+                        />
+                      ))}
+                    </Box>
+                    <Divider sx={{ mt: 1 }} />
                   </Box>
-                  <Divider sx={{ mt: 1 }} />
-                </Box>
-              ))}
-            </FormGroup>
+                ))}
+              </FormGroup>
+            )}
           </Box>
         </Grid>
 
