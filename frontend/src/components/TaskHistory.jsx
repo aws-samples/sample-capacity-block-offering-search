@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Button, IconButton, CircularProgress, Typography, Alert, LinearProgress, Tooltip } from '@mui/material';
-import { Refresh, Download, CheckCircle, ErrorOutline, Schedule, Autorenew, Inbox } from '@mui/icons-material';
+import { Refresh, Download, CheckCircle, ErrorOutline, Schedule, Autorenew, Inbox, Cancel } from '@mui/icons-material';
 import axios from 'axios';
 
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
@@ -12,7 +12,10 @@ const STATUS_META = {
   COMPLETED: { color: 'success', icon: <CheckCircle fontSize="small" /> },
   FAILED: { color: 'error', icon: <ErrorOutline fontSize="small" /> },
   TIMEOUT: { color: 'warning', icon: <ErrorOutline fontSize="small" /> },
+  CANCELLED: { color: 'default', icon: <Cancel fontSize="small" /> },
 };
+
+const CANCELLABLE = new Set(['PENDING', 'RUNNING']);
 
 const fmt = (v) => v ? new Date(v).toLocaleString('zh-CN', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -24,6 +27,7 @@ function TaskHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState({});
+  const [cancelling, setCancelling] = useState({});
 
   const loadTasks = async () => {
     setLoading(true);
@@ -61,6 +65,21 @@ function TaskHistory() {
       alert('下载失败: ' + (err.response?.data?.error || err.message));
     } finally {
       setDownloading(prev => ({ ...prev, [taskId]: false }));
+    }
+  };
+
+  const handleCancel = async (taskId) => {
+    if (!window.confirm('确定取消该任务？已完成的子任务结果会保留，但不会生成 CSV。')) return;
+    setCancelling(prev => ({ ...prev, [taskId]: true }));
+    try {
+      await axios.post(`${API_ENDPOINT}/tasks/${taskId}/cancel`, {}, {
+        headers: { 'X-Api-Key': API_KEY }
+      });
+      await loadTasks();
+    } catch (err) {
+      alert('取消失败: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setCancelling(prev => ({ ...prev, [taskId]: false }));
     }
   };
 
@@ -176,6 +195,18 @@ function TaskHistory() {
                         disabled={downloading[task.task_id]}
                       >
                         下载
+                      </Button>
+                    )}
+                    {CANCELLABLE.has(task.status) && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={cancelling[task.task_id] ? <CircularProgress size={16} /> : <Cancel />}
+                        onClick={() => handleCancel(task.task_id)}
+                        disabled={cancelling[task.task_id]}
+                      >
+                        取消
                       </Button>
                     )}
                   </TableCell>

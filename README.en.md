@@ -15,6 +15,7 @@ Async EC2 Capacity Block search system based on a task queue.
 - ✅ **Task History**: View all submitted tasks and their statuses
 - ✅ **Automatic Instance Discovery**: instance types that are **actually purchasable via Capacity Blocks** (and their supported regions) are discovered via the EC2 API (at deploy time and daily) — no manual maintenance
 - ✅ **Real-time Pricing**: Per-accelerator hourly rate is derived from the actual `UpfrontFee`; no hardcoded prices
+- ✅ **Task Cancellation**: cancel a running/pending task anytime (stops the Step Functions execution; completed results are kept, no CSV is generated)
 
 ## 📷 Preview
 
@@ -73,6 +74,7 @@ capacity_block_search_async/
 │   ├── handle_failure.py       # Error handling
 │   ├── list_tasks.py           # List tasks
 │   ├── get_task_results.py     # Get result URL
+│   ├── cancel_task.py          # Cancel a task (stop the Step Functions execution)
 │   └── requirements.txt
 ├── infrastructure/             # CDK infrastructure
 │   ├── app.py                  # CDK entry point

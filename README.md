@@ -15,6 +15,7 @@
 - ✅ **任务历史**: 查看所有提交的任务及状态
 - ✅ **机型自动发现**: 通过 EC2 API 自动发现**真正支持 Capacity Block** 的加速机型及区域，无需手工维护（部署时 + 每日定时刷新）
 - ✅ **实时单价**: 每加速卡时价由真实 `UpfrontFee` 反算得出，无写死价格
+- ✅ **任务取消**: 运行中/等待中的任务可随时取消（停止 Step Functions 执行，已完成结果保留，不生成 CSV）
 
 ## 📷 预览
 
@@ -73,6 +74,7 @@ capacity_block_search_async/
 │   ├── handle_failure.py       # 错误处理
 │   ├── list_tasks.py           # 列出任务
 │   ├── get_task_results.py     # 获取结果 URL
+│   ├── cancel_task.py          # 取消任务（停止 Step Functions 执行）
 │   └── requirements.txt
 ├── infrastructure/             # CDK 基础设施
 │   ├── app.py                  # CDK 入口

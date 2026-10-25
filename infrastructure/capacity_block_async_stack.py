@@ -3,6 +3,7 @@ from aws_cdk import (
     Duration,
     CfnOutput,
     RemovalPolicy,
+    ArnFormat,
     aws_dynamodb as dynamodb,
     aws_s3 as s3,
     aws_sns as sns,
@@ -439,6 +440,30 @@ class CapacityBlockAsyncStack(Stack):
         tasks_table.grant_read_data(get_results_lambda)
         results_bucket.grant_read(get_results_lambda)
 
+        # Lambda: Cancel Task (stop the running Step Functions execution)
+        cancel_task_lambda = lambda_.Function(
+            self, "CancelTaskLambda",
+            runtime=lambda_.Runtime.PYTHON_3_14,
+            handler="cancel_task.lambda_handler",
+            code=lambda_.Code.from_asset("../backend"),
+            timeout=Duration.seconds(30),
+            memory_size=256,
+            environment={
+                "TASKS_TABLE_NAME": tasks_table.table_name,
+            }
+        )
+
+        tasks_table.grant_read_write_data(cancel_task_lambda)
+        # StopExecution authorizes on the execution ARN, not the state machine ARN
+        cancel_task_lambda.add_to_role_policy(iam.PolicyStatement(
+            actions=["states:StopExecution"],
+            resources=[self.format_arn(
+                service="states", resource="execution",
+                resource_name=f"{state_machine.state_machine_name}:*",
+                arn_format=ArnFormat.COLON_RESOURCE_NAME
+            )]
+        ))
+
         # Lambda: Config (reuse from original)
         config_lambda = lambda_.Function(
             self, "ConfigLambda",
@@ -530,6 +555,13 @@ def lambda_handler(event, context):
         results_resource.add_method(
             "GET",
             apigw.LambdaIntegration(get_results_lambda),
+            api_key_required=True
+        )
+
+        cancel_resource = task_resource.add_resource("cancel")
+        cancel_resource.add_method(
+            "POST",
+            apigw.LambdaIntegration(cancel_task_lambda),
             api_key_required=True
         )
 
