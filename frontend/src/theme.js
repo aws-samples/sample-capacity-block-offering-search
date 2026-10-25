@@ -4,7 +4,7 @@ import { createTheme } from '@mui/material/styles';
 export const SCHEMES = [
   {
     key: 'aws',
-    label: 'AWS 蓝',
+    label: '深蓝',
     mode: 'light',
     primary: { main: '#0972D3', dark: '#033160', light: '#539FE5' },
     secondary: { main: '#FF9900', dark: '#EC7211' },
@@ -12,13 +12,13 @@ export const SCHEMES = [
     headerGradient: 'linear-gradient(135deg, #033160 0%, #0972D3 100%)',
   },
   {
-    key: 'deepblue',
-    label: '深蓝',
+    key: 'silver',
+    label: '银灰',
     mode: 'light',
-    primary: { main: '#283593', dark: '#1A237E', light: '#5C6BC0' },
-    secondary: { main: '#00ACC1', dark: '#00838F' },
-    background: { default: '#EEF0F7', paper: '#FFFFFF' },
-    headerGradient: 'linear-gradient(135deg, #1A237E 0%, #3949AB 100%)',
+    primary: { main: '#546E7A', dark: '#37474F', light: '#78909C' },
+    secondary: { main: '#00897B', dark: '#00695C' },
+    background: { default: '#F4F5F7', paper: '#FFFFFF' },
+    headerGradient: 'linear-gradient(135deg, #37474F 0%, #78909C 100%)',
   },
   {
     key: 'green',
