@@ -144,6 +144,7 @@ function TaskHistory() {
               <TableCell>状态</TableCell>
               <TableCell>实例类型</TableCell>
               <TableCell>持续时间</TableCell>
+              <TableCell>预测天数</TableCell>
               <TableCell>开始日期</TableCell>
               <TableCell sx={{ minWidth: 140 }}>进度</TableCell>
               <TableCell>创建时间</TableCell>
@@ -172,6 +173,9 @@ function TaskHistory() {
                     </Box>
                   </TableCell>
                   <TableCell>{task.parameters?.duration || '-'} 天</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    {task.parameters?.forecast_days > 0 ? `${task.parameters.forecast_days} 天` : '仅开始日期'}
+                  </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{fmt(task.parameters?.start_date)}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

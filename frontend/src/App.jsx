@@ -1,18 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Paper, Typography, Box, Tabs, Tab, Alert, Chip, CircularProgress, ThemeProvider, CssBaseline } from '@mui/material';
-import { CloudQueue, Search as SearchIcon, History as HistoryIcon } from '@mui/icons-material';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Container, Paper, Typography, Box, Tabs, Tab, Alert, Chip, CircularProgress, ThemeProvider, CssBaseline, Select, MenuItem, FormControl } from '@mui/material';
+import { CloudQueue, Search as SearchIcon, History as HistoryIcon, Palette } from '@mui/icons-material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import SearchForm from './components/SearchForm';
 import TaskHistory from './components/TaskHistory';
-import theme from './theme';
+import { createAppTheme, SCHEMES } from './theme';
 import axios from 'axios';
 
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
 const API_KEY = import.meta.env.VITE_API_KEY;
+const SCHEME_KEY = 'cbs:scheme';
 
 function App() {
   const [tabValue, setTabValue] = useState(0);
+  const [scheme, setScheme] = useState(() => localStorage.getItem(SCHEME_KEY) || 'aws');
+  const theme = useMemo(() => createAppTheme(scheme), [scheme]);
+
+  const changeScheme = (key) => {
+    setScheme(key);
+    localStorage.setItem(SCHEME_KEY, key);
+  };
   const [instanceTypesData, setInstanceTypesData] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [configError, setConfigError] = useState(null);
@@ -65,7 +73,7 @@ function App() {
           {/* Header */}
           <Box
             sx={{
-              background: 'linear-gradient(135deg, #033160 0%, #0972D3 100%)',
+              background: theme.custom.headerGradient,
               color: '#fff',
               py: { xs: 3, md: 4 },
             }}
@@ -86,9 +94,28 @@ function App() {
                 {instanceTypeCount > 0 && (
                   <Chip
                     label={`${instanceTypeCount} 种机型可查`}
-                    sx={{ bgcolor: 'rgba(255,255,255,0.18)', color: '#fff', fontWeight: 600 }}
+                    sx={{ bgcolor: 'rgba(255,255,255,0.18)', color: '#fff', fontWeight: 600, display: { xs: 'none', sm: 'flex' } }}
                   />
                 )}
+                {/* Color scheme selector (cached in localStorage) */}
+                <FormControl size="small" sx={{ minWidth: 130 }}>
+                  <Select
+                    value={scheme}
+                    onChange={(e) => changeScheme(e.target.value)}
+                    startAdornment={<Palette sx={{ fontSize: 18, mr: 0.5 }} />}
+                    sx={{
+                      color: '#fff',
+                      bgcolor: 'rgba(255,255,255,0.14)',
+                      '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                      '& .MuiSvgIcon-root': { color: '#fff' },
+                      fontWeight: 600,
+                    }}
+                  >
+                    {SCHEMES.map(s => (
+                      <MenuItem key={s.key} value={s.key}>{s.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Box>
             </Container>
           </Box>

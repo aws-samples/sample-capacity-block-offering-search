@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Grid, FormControl, InputLabel, Select, MenuItem, Button, Box, Chip, Checkbox, FormGroup, FormControlLabel, Typography, Divider, FormHelperText, Alert, CircularProgress } from '@mui/material';
-import { Send } from '@mui/icons-material';
+import { Send, RestartAlt } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 
 const DURATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 105, 112, 119, 126, 133, 140, 147, 154, 161, 168, 175, 182];
+const FORM_KEY = 'cbs:lastForm';
 
 function SearchForm({ onSubmit, instanceTypesData }) {
   const [instanceTypes, setInstanceTypes] = useState([]);
@@ -38,9 +39,24 @@ function SearchForm({ onSubmit, instanceTypesData }) {
       groups[prefix].push(region);
     });
     setRegionGroups(groups);
-    
-    setInstanceTypes(instanceTypesList.length > 0 ? [instanceTypesList[0]] : []);
-    setRegions(sortedRegions);
+
+    // Restore last-used selections from cache (filtered to still-valid options),
+    // otherwise fall back to sensible defaults.
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(FORM_KEY) || 'null'); } catch { cached = null; }
+    if (cached) {
+      const validTypes = (cached.instanceTypes || []).filter(t => instanceTypesList.includes(t));
+      const validRegions = (cached.regions || []).filter(r => sortedRegions.includes(r));
+      setInstanceTypes(validTypes.length ? validTypes : (instanceTypesList[0] ? [instanceTypesList[0]] : []));
+      setRegions(validRegions.length ? validRegions : sortedRegions);
+      if (cached.duration) setDuration(cached.duration);
+      if (typeof cached.forecastDays === 'number') setForecastDays(cached.forecastDays);
+      const d = cached.startDate ? dayjs(cached.startDate) : null;
+      setStartDate(d && d.isValid() && !d.isBefore(dayjs(), 'day') ? d : dayjs());
+    } else {
+      setInstanceTypes(instanceTypesList.length > 0 ? [instanceTypesList[0]] : []);
+      setRegions(sortedRegions);
+    }
   }, [instanceTypesData]);
 
   const handleSubmit = async (e) => {
@@ -49,11 +65,27 @@ function SearchForm({ onSubmit, instanceTypesData }) {
     setSubmitting(true);
     try {
       await onSubmit({ instanceTypes, duration, startDate, forecastDays, regions });
+      // Cache the selections for next time (only after a successful submit)
+      try {
+        localStorage.setItem(FORM_KEY, JSON.stringify({
+          instanceTypes, duration, forecastDays, regions,
+          startDate: startDate.toISOString(),
+        }));
+      } catch { /* ignore quota/serialization errors */ }
     } catch (err) {
       setSubmitError(err.response?.data?.error || err.message || '提交任务失败');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleReset = () => {
+    localStorage.removeItem(FORM_KEY);
+    setInstanceTypes(INSTANCE_TYPES.length ? [INSTANCE_TYPES[0]] : []);
+    setDuration(21);
+    setForecastDays(0);
+    setStartDate(dayjs());
+    setRegions(ALL_REGIONS);
   };
 
   const selectedRegionCount = regions.length;
@@ -186,16 +218,29 @@ function SearchForm({ onSubmit, instanceTypesData }) {
 
         <Grid item xs={12}>
           {submitError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSubmitError(null)}>{submitError}</Alert>}
-          <Button
-            type="submit"
-            variant="contained"
-            size="large"
-            disabled={regions.length === 0 || instanceTypes.length === 0 || submitting}
-            fullWidth
-            startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <Send />}
-          >
-            {submitting ? '提交中…' : '提交任务'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Button
+              type="submit"
+              variant="contained"
+              size="large"
+              disabled={regions.length === 0 || instanceTypes.length === 0 || submitting}
+              fullWidth
+              startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <Send />}
+            >
+              {submitting ? '提交中…' : '提交任务'}
+            </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              size="large"
+              onClick={handleReset}
+              disabled={submitting}
+              startIcon={<RestartAlt />}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              重置
+            </Button>
+          </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
             已选 {instanceTypes.length} 种机型 × {selectedRegionCount} 个区域 × {forecastDays + 1} 个起始日
             ≈ <strong>{estimatedSubtasks}</strong> 个查询子任务
