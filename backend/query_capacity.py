@@ -5,12 +5,23 @@ import time
 import zlib
 from datetime import datetime, timezone
 from botocore.exceptions import ClientError
+from botocore.config import Config
 import os
 
 from query_credentials import load_credentials
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Disable botocore's own retries so OUR credential rotation is the only retry
+# path — avoids ~4 internal retries per call piling up toward the Lambda timeout.
+_EC2_CONFIG = Config(retries={'max_attempts': 1, 'mode': 'standard'},
+                     connect_timeout=5, read_timeout=20)
+
+# Hard per-subtask time budget, kept well below the Lambda timeout so a
+# throttle-heavy region finishes gracefully (records an error row) instead of
+# being killed with Sandbox.Timedout — which would fail the whole execution.
+QUERY_MAX_SECONDS = int(os.environ.get('QUERY_MAX_SECONDS', '180'))
 
 dynamodb = boto3.resource('dynamodb')
 results_table = dynamodb.Table(os.environ['RESULTS_TABLE_NAME'])
@@ -54,9 +65,9 @@ def _build_clients(region):
     With no credentials configured, returns a single execution-role client.
     """
     if not CREDENTIALS:
-        return [boto3.client('ec2', region_name=region)]
+        return [boto3.client('ec2', region_name=region, config=_EC2_CONFIG)]
     return [
-        boto3.client('ec2', region_name=region,
+        boto3.client('ec2', region_name=region, config=_EC2_CONFIG,
                      aws_access_key_id=c['access_key_id'],
                      aws_secret_access_key=c['secret_access_key'])
         for c in CREDENTIALS
@@ -106,6 +117,8 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
     search_date = start_date.date().isoformat() if isinstance(start_date, datetime) else str(start_date)
     cred_idx = zlib.crc32(f"{region}#{instance_type}#{search_date}".encode()) % pool_size
 
+    deadline = time.monotonic() + QUERY_MAX_SECONDS
+
     left = min_capacity
     right = 64
     max_available = 0
@@ -116,6 +129,12 @@ def binary_search_capacity(region, instance_type, start_date, end_date, duration
         throttle_attempts = 0
 
         while True:
+            if time.monotonic() > deadline:
+                # Give up gracefully before the Lambda is force-killed; the
+                # handler records this as an error row and the Map continues.
+                raise TimeoutError(
+                    f"{region}: exceeded {QUERY_MAX_SECONDS}s budget (sustained throttling)"
+                )
             live_idx = _next_live_idx(cred_idx, pool_size)
             if live_idx is None:
                 raise RuntimeError(

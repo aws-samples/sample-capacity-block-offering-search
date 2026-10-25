@@ -174,12 +174,15 @@ class CapacityBlockAsyncStack(Stack):
             ))
 
         # Lambda: Query Capacity (二分查找)
+        # Timeout (10m) sits well above the in-code per-subtask budget
+        # (QUERY_MAX_SECONDS, default 180s) so throttled subtasks end gracefully
+        # with an error row rather than being killed with Sandbox.Timedout.
         query_capacity_lambda = lambda_.Function(
             self, "QueryCapacityLambda",
             runtime=lambda_.Runtime.PYTHON_3_14,
             handler="query_capacity.lambda_handler",
             code=lambda_.Code.from_asset("../backend"),
-            timeout=Duration.minutes(5),
+            timeout=Duration.minutes(10),
             memory_size=512,
             environment={
                 "RESULTS_TABLE_NAME": results_table.table_name,
@@ -285,6 +288,16 @@ class CapacityBlockAsyncStack(Stack):
             self, "QueryCapacityTask",
             lambda_function=query_capacity_lambda,
             payload=sfn.TaskInput.from_json_path_at("$"),
+            result_path=sfn.JsonPath.DISCARD
+        )
+        # Belt-and-suspenders: if a single subtask invocation fails hard
+        # (e.g. Sandbox.Timedout, OOM), skip it and let the Map continue so one
+        # bad subtask never fails the whole task — aggregate still runs and a CSV
+        # is produced from the successful subtasks.
+        subtask_error_skip = sfn.Pass(self, "SubtaskErrorSkip")
+        query_capacity_task.add_catch(
+            subtask_error_skip,
+            errors=["States.ALL"],
             result_path=sfn.JsonPath.DISCARD
         )
 
